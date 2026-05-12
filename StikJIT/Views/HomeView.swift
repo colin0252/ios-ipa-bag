@@ -80,6 +80,7 @@ struct HomeView: View {
     @State private var viewDidAppeared = false
     @State private var pendingJITEnableConfiguration : JITEnableConfiguration? = nil
     @State private var isShowingPairingFilePicker = false
+    @State private var debugFeedback: DebugFeedback?
 
     @State var scriptViewShow = false
     @State private var isShowingConsole = false
@@ -89,12 +90,26 @@ struct HomeView: View {
 
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    private struct DebugFeedback: Identifiable {
+        let id = UUID()
+        let message: String
+        let isError: Bool
+        let isWorking: Bool
+    }
+
     var body: some View {
-        InstalledAppsListView(onSelectApp: { selectedBundle in
+        InstalledAppsListView(onSelectApp: { selectedBundle, selectedName in
             bundleID = selectedBundle
             HapticFeedbackHelper.trigger()
-            startJITInBackground(bundleID: selectedBundle)
+            startJITInBackground(bundleID: selectedBundle, displayName: selectedName)
         }, showDoneButton: false, onImportPairingFile: { isShowingPairingFilePicker = true })
+        .overlay(alignment: .bottom) {
+            if let debugFeedback {
+                debugFeedbackView(debugFeedback)
+                    .padding(.bottom, 40)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .onAppear {
             startTunnelInBackground()
             MountingProgress.shared.checkforMounted()
@@ -227,6 +242,28 @@ struct HomeView: View {
             }
         }
     }
+
+    private func debugFeedbackView(_ feedback: DebugFeedback) -> some View {
+        HStack(spacing: 10) {
+            if feedback.isWorking {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            Text(feedback.message)
+                .font(.subheadline.weight(.semibold))
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .foregroundStyle(feedback.isError ? .red : .primary)
+        .shadow(radius: 4)
+        .padding(.horizontal, 20)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(feedback.message)
+    }
+
     private func getJsCallback(_ script: Data, name: String? = nil) -> DebugAppCallback {
         return { pid, debugProxyHandle, remoteServerHandle, semaphore in
             let model = RunJSViewModel(pid: Int(pid),
@@ -250,9 +287,15 @@ struct HomeView: View {
         }
     }
 
-    private func startJITInBackground(bundleID: String? = nil, pid: Int? = nil, scriptData: Data? = nil, scriptName: String? = nil, triggeredByURLScheme: Bool = false) {
+    private func startJITInBackground(bundleID: String? = nil, pid: Int? = nil, scriptData: Data? = nil, scriptName: String? = nil, triggeredByURLScheme: Bool = false, displayName: String? = nil) {
         isProcessing = true
+        let targetName = displayName ?? bundleID ?? pid.map { String(format: "process %d".localized, $0) } ?? "app".localized
+        let startingMessage = String(format: "Starting JIT for %@".localized, targetName)
         LogManager.shared.addInfoLog("Starting Debug for \(bundleID ?? String(pid ?? 0))")
+        withAnimation {
+            debugFeedback = DebugFeedback(message: startingMessage, isError: false, isWorking: true)
+        }
+        AccessibilityAnnouncer.announce(startingMessage)
 
         if triggeredByURLScheme {
             pubTunnelConnected = false
@@ -266,9 +309,31 @@ struct HomeView: View {
             if triggeredByURLScheme {
                 sleep(1)
             }
-            let finishProcessing = {
+
+            let finishProcessing: (Bool, String?) -> Void = { success, detail in
                 DispatchQueue.main.async {
                     isProcessing = false
+                    let message = success
+                        ? String(format: "JIT request completed for %@".localized, targetName)
+                        : String(format: "JIT failed for %@".localized, targetName)
+                    let feedback = DebugFeedback(message: message, isError: !success, isWorking: false)
+                    withAnimation {
+                        debugFeedback = feedback
+                    }
+                    AccessibilityAnnouncer.announce(message)
+
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                        if debugFeedback?.id == feedback.id {
+                            withAnimation {
+                                debugFeedback = nil
+                            }
+                        }
+                    }
+
+                    if !success {
+                        let failureMessage = detail ?? "StikDebug could not launch or attach to the selected app. Check that the VPN is enabled, the pairing file is current, and the app is still installed.".localized
+                        showAlert(title: "Failed to Enable JIT".localized, message: failureMessage, showOk: true)
+                    }
                 }
             }
 
@@ -286,16 +351,20 @@ struct HomeView: View {
                 callback = getJsCallback(sd, name: scriptName ?? bundleID ?? "Script")
             }
 
-            let logger: LogFunc = { message in if let message { LogManager.shared.addInfoLog(message) } }
+            var lastDebugMessage: String?
+            let logger: LogFunc = { message in
+                if let message {
+                    lastDebugMessage = message
+                    LogManager.shared.addInfoLog(message)
+                }
+            }
             var success: Bool
             if let pid {
                 success = JITEnableContext.shared.debugApp(withPID: Int32(pid), logger: logger, jsCallback: callback)
             } else if let bundleID {
                 success = JITEnableContext.shared.debugApp(withBundleID: bundleID, logger: logger, jsCallback: callback)
             } else {
-                DispatchQueue.main.async {
-                    showAlert(title: "Failed to Debug App".localized, message: "Either bundle ID or PID should be specified.".localized, showOk: true)
-                }
+                lastDebugMessage = "Either bundle ID or PID should be specified.".localized
                 success = false
             }
 
@@ -308,7 +377,7 @@ struct HomeView: View {
                     }
                 }
             }
-            finishProcessing()
+            finishProcessing(success, success ? nil : lastDebugMessage)
         }
     }
 

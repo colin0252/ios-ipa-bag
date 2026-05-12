@@ -39,7 +39,7 @@ struct InstalledAppsListView: View {
     @AppStorage("pinnedSystemAppNames") private var pinnedSystemAppNames: [String: String] = [:]
 
     @Environment(\.dismiss) private var dismiss
-    var onSelectApp: (String) -> Void
+    var onSelectApp: (String, String) -> Void
     var showDoneButton: Bool = true
     var onImportPairingFile: (() -> Void)? = nil
 
@@ -372,12 +372,13 @@ private enum AppListTab: Int, CaseIterable, Identifiable {
                                 bundleID: bundleID, appName: appName,
                                 isLaunching: launchingBundles.contains(bundleID),
                                 performanceMode: performanceMode
-                            ) { startLaunching(bundleID: bundleID) }
+                            ) { startLaunching(bundleID: bundleID, appName: appName) }
                             .overlay(alignment: .topTrailing) {
                                 if isPinned {
                                     Image(systemName: "star.fill")
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(.yellow).padding(6)
+                                        .accessibilityHidden(true)
                                 }
                             }
                             .contextMenu {
@@ -448,20 +449,24 @@ private enum AppListTab: Int, CaseIterable, Identifiable {
         if touched { WidgetCenter.shared.reloadAllTimelines() }
     }
 
-    private func startLaunching(bundleID: String) {
+    private func startLaunching(bundleID: String, appName: String) {
         guard !launchingBundles.contains(bundleID) else { return }
         launchingBundles.insert(bundleID)
         Haptics.selection()
+        AccessibilityAnnouncer.announce(String(format: "Launching %@".localized, appName))
 
         viewModel.launchWithoutDebug(bundleID: bundleID) { success in
             launchingBundles.remove(bundleID)
 
-            let message = success ? "Launch request sent".localized : "Launch failed".localized
+            let message = success
+                ? String(format: "Launch request sent for %@".localized, appName)
+                : String(format: "Launch failed for %@".localized, appName)
             let feedback = LaunchFeedback(message: message, success: success)
 
             if success {
                 Haptics.light()
             }
+            AccessibilityAnnouncer.announce(message)
 
             withAnimation {
                 launchFeedback = feedback
@@ -521,7 +526,7 @@ struct AppButton: View {
     @AppStorage("loadAppIconsOnJIT") private var loadAppIconsOnJIT = true
     @AppStorage("enableAdvancedOptions") private var enableAdvancedOptions = false
 
-    var onSelectApp: (String) -> Void
+    var onSelectApp: (String, String) -> Void
     let sharedDefaults: UserDefaults
     let performanceMode: Bool
 
@@ -534,7 +539,7 @@ struct AppButton: View {
         appName: String,
         recentApps: Binding<[String]>,
         favoriteApps: Binding<[String]>,
-        onSelectApp: @escaping (String) -> Void,
+        onSelectApp: @escaping (String, String) -> Void,
         sharedDefaults: UserDefaults,
         performanceMode: Bool
     ) {
@@ -577,6 +582,7 @@ struct AppButton: View {
                 }
             }
             .padding(.vertical, loadAppIconsOnJIT ? 4 : 8)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -588,8 +594,7 @@ struct AppButton: View {
                 .disabled(!favoriteApps.contains(bundleID) && favoriteApps.count >= 4)
             }
             Button {
-                UIPasteboard.general.string = bundleID
-                Haptics.light()
+                copyBundleID()
             } label: {
                 Label("Copy Bundle ID", systemImage: "doc.on.doc")
             }
@@ -615,8 +620,7 @@ struct AppButton: View {
             .tint(.yellow)
 
             Button {
-                UIPasteboard.general.string = bundleID
-                Haptics.light()
+                copyBundleID()
             } label: {
                 Label("Copy ID", systemImage: "doc.on.doc")
             }
@@ -638,8 +642,34 @@ struct AppButton: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(appName)")
-        .accessibilityHint("Double-tap to select. Swipe for actions, long-press for options.")
+        .accessibilityLabel(String(format: "Enable JIT for %@".localized, appName))
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Double-tap to open the app and enable JIT. Use the actions rotor for favorites or bundle ID.".localized)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityRemoveTraits(.isStaticText)
+        .accessibilityAction(named: Text(favoriteAccessibilityActionLabel)) {
+            toggleFavorite()
+        }
+        .accessibilityAction(named: Text("Copy Bundle ID".localized)) {
+            copyBundleID()
+        }
+    }
+
+    private var accessibilityValue: String {
+        var parts = [String(format: "Bundle ID %@".localized, bundleID)]
+        if favoriteApps.contains(bundleID) {
+            parts.append("Favorite".localized)
+        }
+        if let assignedScriptName {
+            parts.append(String(format: "Assigned script %@".localized, assignedScriptName))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private var favoriteAccessibilityActionLabel: String {
+        favoriteApps.contains(bundleID)
+            ? "Remove from Favorites".localized
+            : "Add to Favorites".localized
     }
 
     // MARK: Icon
@@ -678,18 +708,29 @@ struct AppButton: View {
             recentApps = Array(recentApps.prefix(3))
         }
         persistIfChanged()
-        onSelectApp(bundleID)
+        onSelectApp(bundleID, appName)
     }
 
     private func toggleFavorite() {
         Haptics.light()
-        if favoriteApps.contains(bundleID) {
+        let wasFavorite = favoriteApps.contains(bundleID)
+        if wasFavorite {
             favoriteApps.removeAll { $0 == bundleID }
         } else if favoriteApps.count < 4 {
             favoriteApps.insert(bundleID, at: 0)
             recentApps.removeAll { $0 == bundleID }
+        } else {
+            AccessibilityAnnouncer.announce("Favorites are full".localized)
+            return
         }
         persistIfChanged()
+        AccessibilityAnnouncer.announce(wasFavorite ? "Removed from Favorites".localized : "Added to Favorites".localized)
+    }
+
+    private func copyBundleID() {
+        UIPasteboard.general.string = bundleID
+        Haptics.light()
+        AccessibilityAnnouncer.announce("Bundle ID copied".localized)
     }
 
     private func assignScript(_ url: URL?) {
@@ -792,6 +833,7 @@ struct LaunchAppRow: View {
                 }
             }
             .padding(.vertical, loadAppIconsOnJIT ? 4 : 8)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isLaunching)
@@ -806,8 +848,22 @@ struct LaunchAppRow: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(appName)")
-        .accessibilityHint("Double-tap to launch via CoreDevice.")
+        .accessibilityLabel(String(format: "Launch %@".localized, appName))
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint(isLaunching
+                           ? "Launch request in progress.".localized
+                           : "Double-tap to launch this app without enabling JIT.".localized)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityRemoveTraits(.isStaticText)
+        .accessibilityAction(named: Text("Launch App".localized)) {
+            guard !isLaunching else { return }
+            launchAction()
+        }
+    }
+
+    private var accessibilityValue: String {
+        let state = isLaunching ? "Launching".localized : "Ready".localized
+        return "\(state), \(String(format: "Bundle ID %@".localized, bundleID))"
     }
 
     private var iconView: some View {
@@ -1112,7 +1168,7 @@ extension Dictionary: @retroactive RawRepresentable where Key: Codable, Value: C
 
 struct InstalledAppsListView_Previews: PreviewProvider {
     static var previews: some View {
-        InstalledAppsListView { _ in }
+        InstalledAppsListView { _, _ in }
             .environment(\.colorScheme, .dark)
     }
 }

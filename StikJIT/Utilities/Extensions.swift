@@ -8,6 +8,14 @@ import Foundation
 import UniformTypeIdentifiers
 import UIKit
 
+enum AccessibilityAnnouncer {
+    static func announce(_ message: String) {
+        DispatchQueue.main.async {
+            UIAccessibility.post(notification: .announcement, argument: message)
+        }
+    }
+}
+
 enum PairingFileStore {
     static let fileName = "rp_pairing_file.plist"
     private static let legacyFileName = "pairingFile.plist"
