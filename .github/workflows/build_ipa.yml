@@ -12,6 +12,7 @@ jobs:
 
       - name: 编译项目
         run: |
+          set -e
           xcodebuild -project StikDebug.xcodeproj -scheme StikDebug \
             -configuration Release \
             -sdk iphoneos \
@@ -19,12 +20,19 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             CONFIGURATION_BUILD_DIR=./build
+          echo "✅ 编译完成，build 目录内容："
+          ls -la ./build/
 
       - name: 打包成 IPA
         run: |
+          if [ ! -d "./build/StikDebug.app" ]; then
+            echo "❌ 错误：未生成 StikDebug.app，编译失败"
+            exit 1
+          fi
           mkdir -p Payload
           mv ./build/StikDebug.app Payload/
           zip -r StikDebug-Debug.ipa Payload
+          ls -lh StikDebug-Debug.ipa
 
       - name: 上传 IPA 产物
         uses: actions/upload-artifact@v4
