@@ -10,9 +10,6 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 选择 Xcode 版本
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
-
       - name: 编译项目
         run: |
           xcodebuild -project StikDebug.xcodeproj -scheme StikDebug \
