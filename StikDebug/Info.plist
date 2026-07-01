@@ -1,17 +1,23 @@
-<key>NSAppTransportSecurity</key>
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
 <dict>
-    <key>NSAllowsArbitraryLoads</key>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>seecoon</string>
+        <string>mqqapi</string>
+    </array>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UIRequiresFullScreen</key>
     <true/>
 </dict>
-<key>LSApplicationQueriesSchemes</key>
-<array>
-<string>seecoon</string>
-<string>mqqapi</string>
-</array>
-<key>UISupportedInterfaceOrientations</key>
-<array>
-<string>UIInterfaceOrientationPortrait</string>
-<string>UIInterfaceOrientationLandscapeRight</string>
-</array>
-<key>UIRequiresFullScreen</key>
-<true/>
+</plist>
