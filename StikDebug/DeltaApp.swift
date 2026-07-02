@@ -20,7 +20,7 @@ struct QQConfig {
     }
 }
 
-// MARK: - AppDelegate（动态控制屏幕方向）
+// MARK: - AppDelegate
 class AppDelegate: NSObject, UIApplicationDelegate {
     static var orientationLock = UIInterfaceOrientationMask.portrait
     
@@ -33,7 +33,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
-// MARK: - 强制旋转屏幕工具
+// MARK: - 屏幕方向控制
 struct OrientationHelper {
     static func lockPortrait() {
         AppDelegate.orientationLock = .portrait
@@ -45,30 +45,6 @@ struct OrientationHelper {
         AppDelegate.orientationLock = .landscapeRight
         UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
         UIViewController.attemptRotationToDeviceOrientation()
-    }
-}
-
-// MARK: - 安全区域工具
-struct SafeArea {
-    static var top: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first?.safeAreaInsets.top ?? 0
-    }
-    static var bottom: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first?.safeAreaInsets.bottom ?? 0
-    }
-    static var left: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first?.safeAreaInsets.left ?? 0
-    }
-    static var right: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first?.safeAreaInsets.right ?? 0
     }
 }
 
@@ -179,6 +155,19 @@ class DataManager: ObservableObject {
 // MARK: - 页面路由
 enum AppPage { case home, authQR, accountList, tokenCheck }
 
+// MARK: - 通用全屏容器
+struct FullScreenView<Content: View>: View {
+    let content: Content
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    var body: some View {
+        content
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            .edgesIgnoringSafeArea(.all)
+    }
+}
+
 // MARK: - QQ 授权扫码页面
 struct QQAuthView: View {
     @EnvironmentObject var manager: DataManager
@@ -188,20 +177,22 @@ struct QQAuthView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
-                if let qrImage = qrImage {
-                    Image(uiImage: qrImage).resizable().scaledToFit().frame(width: 250, height: 250)
-                    Text("请使用 QQ 扫描此二维码").foregroundColor(.black)
-                } else {
-                    ProgressView("生成二维码中...")
+            FullScreenView {
+                VStack(spacing: 20) {
+                    if let qrImage = qrImage {
+                        Image(uiImage: qrImage).resizable().scaledToFit().frame(width: 250, height: 250)
+                        Text("请使用 QQ 扫描此二维码").foregroundColor(.black)
+                    } else {
+                        ProgressView("生成二维码中...")
+                    }
+                    if let token = authManager.accessToken {
+                        Text("获取到 token: \(token.prefix(10))...").foregroundColor(.green)
+                        Button("复制 Token") { UIPasteboard.general.string = token }
+                    }
                 }
-                if let token = authManager.accessToken {
-                    Text("获取到 token: \(token.prefix(10))...").foregroundColor(.green)
-                    Button("复制 Token") { UIPasteboard.general.string = token }
-                }
+                .padding()
+                .background(Color.white)
             }
-            .padding()
-            .background(Color.white.ignoresSafeArea())
             .onAppear {
                 if let url = authManager.startAuth() {
                     qrImage = QRGenerator.createQRCode(text: url.absoluteString)
@@ -215,46 +206,38 @@ struct QQAuthView: View {
     }
 }
 
-// MARK: - 主界面（竖屏，白底全屏，适配 iPhone X+ 安全区域）
+// MARK: - 主界面（竖屏，白底全屏）
 struct HomeView: View {
     @Binding var currentPage: AppPage
     @State private var showQQAuth = false
     
     var body: some View {
-        GeometryReader { geo in
+        FullScreenView {
             ZStack {
-                Color.white.ignoresSafeArea()
+                Color.white
                 
                 VStack(spacing: 0) {
                     Spacer()
-                        .frame(height: SafeArea.top + geo.size.height * 0.05)
                     
                     Text("三角洲行动助手")
-                        .font(.system(size: min(geo.size.width * 0.075, 34), weight: .bold))
+                        .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.black)
-                        .padding(.bottom, geo.size.height * 0.06)
+                        .padding(.bottom, 40)
                     
-                    VStack(spacing: min(geo.size.height * 0.025, 20)) {
-                        HomeButton(title: "挂机收号（横屏）", color: .red) {
-                            currentPage = .authQR
-                        }
-                        .frame(width: min(geo.size.width * 0.78, 320))
+                    VStack(spacing: 18) {
+                        Button("挂机收号（横屏）") { currentPage = .authQR }
+                            .homeButtonStyle(color: .red)
                         
-                        HomeButton(title: "QQ 扫码登录获取 Token", color: .orange) {
-                            showQQAuth = true
-                        }
-                        .frame(width: min(geo.size.width * 0.78, 320))
+                        Button("QQ 扫码登录获取 Token") { showQQAuth = true }
+                            .homeButtonStyle(color: .orange)
                         
-                        HomeButton(title: "账号库存", color: .green) {
-                            currentPage = .accountList
-                        }
-                        .frame(width: min(geo.size.width * 0.78, 320))
+                        Button("账号库存") { currentPage = .accountList }
+                            .homeButtonStyle(color: .green)
                         
-                        HomeButton(title: "Token 校验 + 一键上号", color: .blue) {
-                            currentPage = .tokenCheck
-                        }
-                        .frame(width: min(geo.size.width * 0.78, 320))
+                        Button("Token 校验 + 一键上号") { currentPage = .tokenCheck }
+                            .homeButtonStyle(color: .blue)
                     }
+                    .padding(.horizontal, 30)
                     
                     Spacer()
                 }
@@ -267,26 +250,20 @@ struct HomeView: View {
     }
 }
 
-// MARK: - 首页按钮组件
-struct HomeButton: View {
-    let title: String
-    let color: Color
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(color)
-                .cornerRadius(14)
-        }
+// MARK: - 首页按钮样式
+extension View {
+    func homeButtonStyle(color: Color) -> some View {
+        self
+            .font(.system(size: 18, weight: .medium))
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(color)
+            .cornerRadius(14)
     }
 }
 
-// MARK: - 挂机收号页面（强制横屏，白底全屏，适配 iPhone X+ 安全区域）
+// MARK: - 挂机收号页面（强制横屏，白底全屏）
 struct PageA: View {
     @EnvironmentObject var manager: DataManager
     @Binding var currentPage: AppPage
@@ -315,10 +292,6 @@ struct PageA: View {
                 let paste = UIPasteboard.general.string ?? ""
                 if paste != lastPaste && paste.contains("open://authdata/") {
                     lastPaste = paste
-                    let baseStr = paste.replacingOccurrences(of: "open://authdata/", with: "")
-                    guard let data = Data(base64Encoded: baseStr),
-                          let sid = String(data: data, encoding: .utf8),
-                          sid == session else { continue }
                     await MainActor.run {}
                 }
             }
@@ -356,9 +329,9 @@ struct PageA: View {
     }
     
     var body: some View {
-        GeometryReader { geo in
+        FullScreenView {
             ZStack {
-                Color.white.ignoresSafeArea()
+                Color.white
                 
                 VStack(spacing: 0) {
                     HStack {
@@ -372,18 +345,15 @@ struct PageA: View {
                         .font(.system(size: 16))
                         Spacer()
                     }
-                    .padding(.horizontal, 20 + SafeArea.left)
-                    .padding(.top, 10 + SafeArea.top)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
                     
                     Spacer()
                     
                     Image(uiImage: qrImage)
                         .resizable()
                         .scaledToFit()
-                        .frame(
-                            width: min(geo.size.width * 0.32, geo.size.height * 0.55, 280),
-                            height: min(geo.size.width * 0.32, geo.size.height * 0.55, 280)
-                        )
+                        .frame(width: 260, height: 260)
                     
                     Text("已抓取：\(catchCount) 个账号")
                         .foregroundColor(.gray)
@@ -406,15 +376,15 @@ struct PageA: View {
     }
 }
 
-// MARK: - 账号库存页面（竖屏，白底全屏，适配 iPhone X+）
+// MARK: - 账号库存页面（竖屏，白底全屏）
 struct PageB: View {
     @EnvironmentObject var manager: DataManager
     @Binding var currentPage: AppPage
     
     var body: some View {
-        GeometryReader { geo in
+        FullScreenView {
             ZStack {
-                Color.white.ignoresSafeArea()
+                Color.white
                 
                 VStack(spacing: 0) {
                     HStack {
@@ -424,7 +394,7 @@ struct PageB: View {
                         Spacer()
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 10 + SafeArea.top)
+                    .padding(.top, 10)
                     
                     Text("账号库存")
                         .font(.system(size: 22, weight: .bold))
@@ -456,16 +426,16 @@ struct PageB: View {
     }
 }
 
-// MARK: - Token 校验与上号（竖屏，白底全屏，适配 iPhone X+）
+// MARK: - Token 校验与上号（竖屏，白底全屏）
 struct PageC: View {
     @Binding var currentPage: AppPage
     @State var token = ""
     @State var status = ""
     
     var body: some View {
-        GeometryReader { geo in
+        FullScreenView {
             ZStack {
-                Color.white.ignoresSafeArea()
+                Color.white
                 
                 VStack(spacing: 0) {
                     HStack {
@@ -475,7 +445,7 @@ struct PageC: View {
                         Spacer()
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 10 + SafeArea.top)
+                    .padding(.top, 10)
                     
                     Spacer()
                     
@@ -492,9 +462,11 @@ struct PageC: View {
                     Button("校验有效性") { check() }
                         .foregroundColor(.white)
                         .font(.system(size: 17))
-                        .frame(width: min(geo.size.width * 0.65, 280), height: 46)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
                         .background(Color.blue)
                         .cornerRadius(10)
+                        .padding(.horizontal, 30)
                         .padding(.top, 18)
                     
                     Text(status)
@@ -508,9 +480,11 @@ struct PageC: View {
                     .disabled(token.isEmpty)
                     .foregroundColor(.white)
                     .font(.system(size: 17))
-                    .frame(width: min(geo.size.width * 0.65, 280), height: 46)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
                     .background(Color.orange)
                     .cornerRadius(10)
+                    .padding(.horizontal, 30)
                     .padding(.top, 10)
                     
                     Spacer()
