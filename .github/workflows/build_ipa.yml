@@ -20,7 +20,7 @@ jobs:
           git add StikDebug/Info.plist
           git commit -m "fix"
 
-      - name: 云端临时生成私有协助权限entitlements.plist（不会上传到源码）
+      - name: 云端临时生成私有协助权限entitlements.plist
         run: |
           cat > entitlements.plist <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -47,7 +47,7 @@ jobs:
 </plist>
 EOF
 
-      - name: 生成ExportOptions导出配置（debugging模式，不破坏二进制）
+      - name: 生成ExportOptions导出配置
         run: |
           cat > ExportOptions.plist <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -70,7 +70,7 @@ EOF
 </plist>
 EOF
 
-      - name: Archive编译，注入私有权限（核心参数CODE_SIGN_ENTITLEMENTS）
+      - name: Archive编译，注入私有权限
         run: |
           mkdir build
           xcodebuild archive \
