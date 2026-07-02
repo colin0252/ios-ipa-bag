@@ -5,6 +5,14 @@ import UIKit
 import CoreImage
 import CryptoKit
 
+//全局强制永久横屏（适配Xcode16所有系统）
+class AppDelegate: NSObject, UIApplicationDelegate {
+    static var orientationLock = UIInterfaceOrientationMask.landscapeRight
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        return AppDelegate.orientationLock
+    }
+}
+
 //高清二维码生成器
 struct QRGenerator {
     static let context = CIContext()
@@ -25,7 +33,7 @@ struct QRGenerator {
     }
 }
 
-//修复Xcode16 Release静态初始化崩溃报错，不在全局创建Nonce
+//加密工具
 struct CryptoHelper {
     private static let keyRaw = Data("IENNSJFJWKSFJ20260702".utf8)
     private static let nonceRaw = Data("1234567890123456".utf8)
@@ -49,7 +57,7 @@ struct CryptoHelper {
     }
 }
 
-//账号结构体 修复Codable解码警告
+//账号结构体
 struct Account: Identifiable, Codable {
     let id: UUID
     let openid: String
@@ -108,23 +116,12 @@ class DataManager: ObservableObject {
     }
 }
 
-//iOS16可用横屏强制修饰
-struct LandscapeModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .onAppear {
-                UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
-            }
-            .onDisappear {
-                UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
-            }
-    }
-}
-
-//页面枚举
-enum PageType: Int, Identifiable {
-    case scanPage, listPage, loginPage
-    var id: Int { rawValue }
+//全局页面路由枚举
+enum AppPage {
+    case home
+    case pageA //挂机收号
+    case pageB //账号列表
+    case pageC //校验解密一键上号
 }
 
 //QQ唤起本地授权网页
@@ -198,10 +195,10 @@ doAuth();
     }
 }
 
-//A页面：挂机静默收号
-struct ScanLoginView: View {
+//A页面：挂机静默收号（已精简所有多余文字）
+struct PageA: View {
     @EnvironmentObject var manager: DataManager
-    @Environment(\.dismiss) var dismiss
+    @Binding var currentPage: AppPage
     @State private var qrCodeImage: UIImage = UIImage()
     @State private var currentSession: String = ""
     @State private var loopTask: Task<Void, Never>?
@@ -254,47 +251,43 @@ struct ScanLoginView: View {
     }
     
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 45) {
-                HStack {
-                    Button("关闭挂机收号") {
-                        loopTask?.cancel()
-                        dismiss()
+        ZStack{
+            Color.black.ignoresSafeArea()
+            HStack(spacing:0){
+                VStack(spacing:35){
+                    HStack{
+                        Button("关闭挂机收号") {
+                            loopTask?.cancel()
+                            exit(0)
+                        }
+                        .foregroundColor(.blue)
+                        Spacer()
                     }
-                    .foregroundColor(.blue)
-                    .font(.title3)
+                    .padding(.leading,20)
+                    
+                    Spacer()
+                    Text("三角洲")
+                        .font(.system(size:52,weight:.bold))
+                        .foregroundColor(.white)
+                    Text("今日已抓取账号：\(catchCount) 个")
+                        .foregroundColor(.gray)
+                        .font(.system(size:22))
                     Spacer()
                 }
-                Spacer()
-                HStack(spacing:14){
-                    Image(systemName: "penguin.fill")
-                        .font(.system(size:52))
-                        .foregroundColor(.black)
-                    Text("QQ账号自动授权收号")
-                        .font(.system(size:36, weight: .light))
+                .frame(width: UIScreen.main.bounds.width * 0.45)
+                
+                VStack{
+                    Spacer()
+                    Image(uiImage: qrCodeImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width:290,height:290)
+                    Spacer()
                 }
-                Text("QQ长按图片识别，自动弹出官方异地登录弹窗\n今日已抓取账号：\(catchCount) 个")
-                    .font(.system(size:20))
-                    .foregroundColor(.gray)
-                    .multilineTextAlignment(.center)
-                Spacer()
+                .frame(width: UIScreen.main.bounds.width * 0.55)
             }
-            .frame(width: UIScreen.main.bounds.width * 0.45)
-            .padding(.leading, 40)
-            
-            VStack {
-                Spacer()
-                Image(uiImage: qrCodeImage)
-                    .resizable()
-                    .frame(width:340, height:340)
-                Text("微信无法识别，只允许手机QQ扫码")
-                    .foregroundColor(.gray)
-                Spacer()
-            }
-            .frame(width: UIScreen.main.bounds.width * 0.55)
         }
-        .navigationBarHidden(true)
-        .modifier(LandscapeModifier())
+        .interactiveDismissDisabled(true)
         .onAppear {
             resetNewSession()
         }
@@ -314,39 +307,50 @@ struct ScanLoginView: View {
 }
 
 //B页面：账号列表管理
-struct AccountListView: View {
+struct PageB: View {
     @EnvironmentObject var manager: DataManager
-    @Environment(\.dismiss) var dismiss
+    @Binding var currentPage: AppPage
     var body: some View {
-        NavigationStack {
-            List(manager.accounts) { acc in
-                VStack(alignment:.leading, spacing:6) {
-                    Text("OpenID：\(acc.openid)")
-                    Text("Seecoon_Token：\(acc.seecoon_token)")
-                        .font(.system(size:9))
-                    HStack(spacing:15) {
-                        Button("复制Token") {
-                            UIPasteboard.general.string = acc.seecoon_token
-                        }
-                        Button("删除账号", role: .destructive) {
-                            manager.deleteAccount(uuid: acc.id)
+        ZStack{
+            Color.black.ignoresSafeArea()
+            VStack{
+                HStack{
+                    Button("返回主页") {
+                        currentPage = .home
+                    }
+                    .foregroundColor(.blue)
+                    Spacer()
+                }
+                .padding()
+                Text("账号库存管理")
+                    .foregroundColor(.white)
+                    .font(.title)
+                List(manager.accounts) { acc in
+                    VStack(alignment:.leading, spacing:6) {
+                        Text("OpenID：\(acc.openid)")
+                            .foregroundColor(.white)
+                        Text("Seecoon_Token：\(acc.seecoon_token)")
+                            .font(.system(size:9))
+                            .foregroundColor(.white)
+                        HStack(spacing:15) {
+                            Button("复制Token") {
+                                UIPasteboard.general.string = acc.seecoon_token
+                            }
+                            Button("删除账号", role: .destructive) {
+                                manager.deleteAccount(uuid: acc.id)
+                            }
                         }
                     }
                 }
             }
-            .navigationTitle("账号库存管理")
-            .toolbar {
-                ToolbarItem(placement:.navigationBarLeading) {
-                    Button("返回首页") { dismiss() }
-                }
-            }
         }
+        .interactiveDismissDisabled(true)
     }
 }
 
 //C页面：Token校验、一键上号、批量解密
-struct TokenLoginView: View {
-    @Environment(\.dismiss) var dismiss
+struct PageC: View {
+    @Binding var currentPage: AppPage
     @State var inputToken = ""
     @State var statusText = ""
     @State var openDecryptSheet = false
@@ -381,30 +385,44 @@ struct TokenLoginView: View {
     }
     
     var body: some View {
-        VStack(spacing:22) {
-            TextField("粘贴Seecoon_Token", text:$inputToken)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal,20)
-            
-            Button("校验账号有效性", action: checkTokenValid)
-                .foregroundColor(.blue)
-                .font(.system(size:18))
-            
-            Text(statusText)
-                .font(.system(size:18))
-            
-            Button("一键唤起三角洲登录", action: openGame)
-                .disabled(!statusText.contains("✅"))
-                .foregroundColor(.gray)
-                .font(.system(size:18))
-            
-            Button("🔐 delta.dat批量解密导出", action:{openDecryptSheet=true})
-                .foregroundColor(.blue)
-                .font(.system(size:18))
-            
-            Spacer()
+        ZStack{
+            Color.black.ignoresSafeArea()
+            VStack(spacing:22) {
+                HStack{
+                    Button("返回主页") {
+                        currentPage = .home
+                    }
+                    .foregroundColor(.blue)
+                    Spacer()
+                }
+                .padding()
+                
+                TextField("粘贴Seecoon_Token", text:$inputToken)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal,20)
+                
+                Button("校验账号有效性", action: checkTokenValid)
+                    .foregroundColor(.blue)
+                    .font(.system(size:18))
+                
+                Text(statusText)
+                    .foregroundColor(.white)
+                    .font(.system(size:18))
+                
+                Button("一键唤起三角洲登录", action: openGame)
+                    .disabled(!statusText.contains("✅"))
+                    .foregroundColor(.gray)
+                    .font(.system(size:18))
+                
+                Button("🔐 delta.dat批量解密导出", action:{openDecryptSheet=true})
+                    .foregroundColor(.blue)
+                    .font(.system(size:18))
+                
+                Spacer()
+            }
+            .padding(.top,20)
         }
-        .padding(.top,20)
+        .interactiveDismissDisabled(true)
         .sheet(isPresented:$openDecryptSheet) {
             NavigationStack {
                 ScrollView {
@@ -428,18 +446,16 @@ struct TokenLoginView: View {
     }
 }
 
-//首页：全部改用sheet，无iOS17导航API
+//首页
 struct HomeView: View {
     @EnvironmentObject var manager: DataManager
-    @State var openScan = false
-    @State var openList = false
-    @State var openLogin = false
-    
+    @Binding var currentPage: AppPage
     var body: some View {
-        NavigationStack {
+        ZStack{
+            Color.black.ignoresSafeArea()
             VStack(spacing:35) {
                 Button {
-                    openScan = true
+                    currentPage = .pageA
                 } label: {
                     Text("A：横屏挂机静默收号")
                         .font(.title2)
@@ -449,7 +465,7 @@ struct HomeView: View {
                         .cornerRadius(14)
                 }
                 Button {
-                    openList = true
+                    currentPage = .pageB
                 } label: {
                     Text("B：全部账号查看与复制")
                         .font(.title2)
@@ -459,7 +475,7 @@ struct HomeView: View {
                         .cornerRadius(14)
                 }
                 Button {
-                    openLogin = true
+                    currentPage = .pageC
                 } label: {
                     Text("C：校验Token+一键上号+解密")
                         .font(.title2)
@@ -469,22 +485,32 @@ struct HomeView: View {
                         .cornerRadius(14)
                 }
             }
-            .navigationTitle("三角洲全自动收号器 终版")
-            .sheet(isPresented:$openScan) { ScanLoginView() }
-            .sheet(isPresented:$openList) { AccountListView() }
-            .sheet(isPresented:$openLogin) { TokenLoginView() }
         }
+        .interactiveDismissDisabled(true)
     }
 }
 
+//总入口路由 + 全局横屏锁定
 @main
 struct DeltaApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject var manager = DataManager()
+    @State var currentPage: AppPage = .home
+    
     var body: some Scene {
         WindowGroup {
-            HomeView()
-                .environmentObject(manager)
-                .preferredColorScheme(.light)
+            switch currentPage {
+            case .home:
+                HomeView(currentPage: $currentPage)
+            case .pageA:
+                PageA(currentPage: $currentPage)
+                    .environmentObject(manager)
+            case .pageB:
+                PageB(currentPage: $currentPage)
+                    .environmentObject(manager)
+            case .pageC:
+                PageC(currentPage: $currentPage)
+            }
         }
     }
 }
