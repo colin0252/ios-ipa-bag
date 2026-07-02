@@ -1,4 +1,5 @@
 name: 手动打包收号器
+# 只保留手动触发，删除push自动触发
 on:
   workflow_dispatch:
 
@@ -20,7 +21,7 @@ jobs:
           git add StikDebug/Info.plist
           git commit -m "自动补全包名"
 
-      - name: 云端临时生成协助权限文件entitlements.plist（不会存入源码）
+      - name: 云端临时生成协助权限文件entitlements.plist
         run: |
           cat > entitlements.plist <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -47,7 +48,7 @@ jobs:
 </plist>
 EOF
 
-      - name: 生成导出配置ExportOptions.plist（debugging纯净导出，不破坏二进制）
+      - name: 生成导出配置ExportOptions.plist
         run: |
           cat > ExportOptions.plist <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -70,7 +71,7 @@ EOF
 </plist>
 EOF
 
-      - name: 归档编译，注入后台私有权限（原版单点请求打包方式）
+      - name: 归档编译注入权限
         run: |
           mkdir build
           xcodebuild archive \
@@ -83,14 +84,14 @@ EOF
           SKIP_VALIDATION=YES \
           IPHONEOS_DEPLOYMENT_TARGET=16.0
 
-      - name: 导出无签名纯净IPA
+      - name: 导出无签名IPA
         run: |
           xcodebuild -exportArchive \
           -archivePath build/StikDebug.xcarchive \
           -exportPath build \
           -exportOptionsPlist ExportOptions.plist
 
-      - name: 上传成品IPA文件
+      - name: 上传成品文件
         uses: actions/upload-artifact@v7
         with:
           name: 三角洲收号器成品
