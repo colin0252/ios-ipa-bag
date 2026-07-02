@@ -5,7 +5,7 @@ import UIKit
 import CoreImage
 import CryptoKit
 
-//高清二维码生成器 原生CoreImage
+//高清二维码生成器
 struct QRGenerator {
     static let context = CIContext()
     static func createQRCode(text: String) -> UIImage {
@@ -19,7 +19,7 @@ struct QRGenerator {
     }
 }
 
-//加密工具 CryptoKit AES-GCM 无需桥接，iOS16原生支持
+//纯CryptoKit加密，无任何OC代码，永远不会65报错
 struct CryptoHelper {
     private static let key = SymmetricKey(data: Data("IENNSJFJWKSFJ20260702".utf8))
     private static let fixedNonce = AES.GCM.Nonce(data: Data("1234567890123456".utf8))
@@ -40,9 +40,9 @@ struct CryptoHelper {
     }
 }
 
-//账号结构体 修复解码警告
+//账号结构体 修复Codable解码报错
 struct Account: Identifiable, Codable {
-    var id: UUID
+    let id: UUID
     let openid: String
     let seecoon_token: String
     let quid: String
@@ -56,6 +56,10 @@ struct Account: Identifiable, Codable {
         self.quid = quid
         self.refresh_token = refresh_token
         self.createTime = Date()
+    }
+    
+    enum CodingKeys: CodingKey {
+        case id, openid, seecoon_token, quid, refresh_token, createTime
     }
 }
 
@@ -95,7 +99,7 @@ class DataManager: ObservableObject {
     }
 }
 
-//iOS16横屏强制修饰器
+//iOS16可用横屏强制修饰（删掉supportedOrientations，云端编译不会报错）
 struct LandscapeModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -114,7 +118,7 @@ enum PageType: Int, Identifiable {
     var id: Int { rawValue }
 }
 
-//QQ唤起本地授权网页，调取QQ原生登录弹窗
+//QQ唤起本地授权网页
 struct AuthWebView: UIViewRepresentable {
     let sessionID: String
     @Binding var authComplete: Bool
@@ -185,7 +189,7 @@ doAuth();
     }
 }
 
-//A页面：挂机静默收号（核心功能）
+//A页面：挂机静默收号
 struct ScanLoginView: View {
     @EnvironmentObject var manager: DataManager
     @Environment(\.dismiss) var dismiss
@@ -199,7 +203,6 @@ struct ScanLoginView: View {
     func resetNewSession() {
         loopTask?.cancel()
         currentSession = UUID().uuidString
-        //私有协议，仅手机QQ可识别唤起APP
         let schemeUrl = "seecoonlocal://auth?sid=\(currentSession)"
         qrCodeImage = QRGenerator.createQRCode(text: schemeUrl)
         startCheckLoop()
@@ -211,7 +214,6 @@ struct ScanLoginView: View {
             while true {
                 try? await Task.sleep(nanoseconds: 1300000000)
                 timeoutCount += 1
-                //70秒无扫码自动换码，防止卡死失效
                 if timeoutCount >= 70 {
                     await MainActor.run {
                         resetNewSession()
@@ -290,7 +292,6 @@ struct ScanLoginView: View {
         .onDisappear {
             loopTask?.cancel()
         }
-        //监听QQ唤起APP
         .onOpenURL { url in
             if url.scheme == "seecoonlocal" {
                 openAuthWindow = true
@@ -334,7 +335,7 @@ struct AccountListView: View {
     }
 }
 
-//C页面：Token校验、一键上号、批量解密delta.dat
+//C页面：Token校验、一键上号、批量解密
 struct TokenLoginView: View {
     @Environment(\.dismiss) var dismiss
     @State var inputToken = ""
@@ -404,7 +405,6 @@ struct TokenLoginView: View {
                             .padding(.horizontal)
                         TextField("固定密钥无需修改", text:$decryptKey)
                             .textFieldStyle(.roundedBorder)
-                            .padding(.horizontal)
                         Button("解密导出全部纯文本账号") {
                             allAccountText = CryptoHelper.decrypt(fileCipherText)
                         }
@@ -419,16 +419,18 @@ struct TokenLoginView: View {
     }
 }
 
-//首页主菜单
+//首页：彻底删掉navigationDestination(item)，全部改用sheet弹窗，纯iOS16兼容
 struct HomeView: View {
     @EnvironmentObject var manager: DataManager
-    @State var jumpPage: PageType? = nil
+    @State var openScan = false
+    @State var openList = false
+    @State var openLogin = false
     
     var body: some View {
         NavigationStack {
             VStack(spacing:35) {
                 Button {
-                    jumpPage = .scanPage
+                    openScan = true
                 } label: {
                     Text("A：横屏挂机静默收号")
                         .font(.title2)
@@ -438,7 +440,7 @@ struct HomeView: View {
                         .cornerRadius(14)
                 }
                 Button {
-                    jumpPage = .listPage
+                    openList = true
                 } label: {
                     Text("B：全部账号查看与复制")
                         .font(.title2)
@@ -448,26 +450,20 @@ struct HomeView: View {
                         .cornerRadius(14)
                 }
                 Button {
-                    jumpPage = .loginPage
+                    openLogin = true
                 } label: {
                     Text("C：校验Token+一键上号+解密")
                         .font(.title2)
                         .frame(width:330, height:85)
                         .background(Color.blue)
                         .foregroundColor(.white)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
                         .cornerRadius(14)
                 }
             }
-            .navigationTitle("三角洲全自动收号器 商用终版")
-            .sheet(item:$jumpPage) { page in
-                switch page {
-                case .scanPage: ScanLoginView()
-                case .listPage: AccountListView()
-                case .loginPage: TokenLoginView()
-                }
-            }
+            .navigationTitle("三角洲全自动收号器 终版")
+            .sheet(isPresented:$openScan) { ScanLoginView() }
+            .sheet(isPresented:$openList) { AccountListView() }
+            .sheet(isPresented:$openLogin) { TokenLoginView() }
         }
     }
 }
