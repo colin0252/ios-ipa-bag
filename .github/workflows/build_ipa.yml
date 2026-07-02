@@ -1,19 +1,51 @@
 name: Build Unsigned IPA
 
 on:
-  workflow_dispatch:          # 允许在 GitHub 网页上手动触发
+  workflow_dispatch:          # 手动触发
 
 jobs:
   build:
-    runs-on: macos-latest     # 使用最新 macOS 环境
+    runs-on: macos-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ============================================================
-      # 步骤 1：Archive（生成 .xcarchive）
-      # ============================================================
+      # 🔧 自动修复 Info.plist（如果不存在或内容不完整）
+      - name: Ensure Info.plist exists
+        run: |
+          PLIST_PATH="StikDebug/Info.plist"
+          # 如果文件不存在，或其中没有 CFBundleIdentifier，就创建/覆盖
+          if [ ! -f "$PLIST_PATH" ] || ! grep -q "CFBundleIdentifier" "$PLIST_PATH"; then
+            echo "Generating Info.plist..."
+            cat > "$PLIST_PATH" << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleIdentifier</key>
+              <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+              <key>CFBundleExecutable</key>
+              <string>$(EXECUTABLE_NAME)</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+              <key>UILaunchStoryboardName</key>
+              <string>LaunchScreen</string>
+              <key>UISupportedInterfaceOrientations</key>
+              <array>
+                  <string>UIInterfaceOrientationPortrait</string>
+              </array>
+          </dict>
+          </plist>
+          EOF
+          fi
+
       - name: Archive
         run: |
           xcodebuild archive \
@@ -25,12 +57,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PRODUCT_BUNDLE_IDENTIFIER=com.stikdebug.app
-            # ↑ 关键修改：必须明确指定 Bundle Identifier，否则会报
-            #   "Archive Missing Bundle Identifier"
 
-      # ============================================================
-      # 步骤 2：导出无签名 IPA
-      # ============================================================
       - name: Export IPA
         run: |
           xcodebuild -exportArchive \
@@ -39,9 +66,6 @@ jobs:
             -exportOptionsPlist Export.plist \
             CODE_SIGNING_ALLOWED=NO
 
-      # ============================================================
-      # 步骤 3：上传 IPA 为构建产物（可选，方便下载）
-      # ============================================================
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
