@@ -9,12 +9,18 @@ import CryptoKit
 struct QRGenerator {
     static let context = CIContext()
     static func createQRCode(text: String) -> UIImage {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(text.utf8)
-        filter.correctionLevel = "H"
-        let outputImage = filter.outputImage!
-        let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX:15, y:15))
-        let cgImg = context.createCGImage(scaledImage, from: scaledImage.extent)!
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else {
+            return UIImage()
+        }
+        filter.setValue(Data(text.utf8), forKey: "inputMessage")
+        filter.setValue("H", forKey: "inputCorrectionLevel")
+        guard let outputImage = filter.outputImage else {
+            return UIImage()
+        }
+        let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX: 15, y: 15))
+        guard let cgImg = context.createCGImage(scaledImage, from: scaledImage.extent) else {
+            return UIImage()
+        }
         return UIImage(cgImage: cgImg)
     }
 }
