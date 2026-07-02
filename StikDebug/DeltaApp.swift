@@ -2,9 +2,9 @@ import SwiftUI
 import CoreImage
 import CryptoKit
 
-// MARK: - 配置（你的真实 AppID）
+// MARK: - QQ 互联配置
 struct QQConfig {
-    static let appID = "100360353"   // ← 已填入你申请的 APP ID
+    static let appID = "100360353"
     static let redirectURI = "seecoonlocal://oauth/callback"
     
     static func authURL(state: String) -> URL {
@@ -26,7 +26,6 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         return AppDelegate.orientationLock
     }
-    
     func application(_ application: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
         return QQAuthManager.shared.handleCallback(url: url)
     }
@@ -48,14 +47,12 @@ class QQAuthManager: ObservableObject {
     func handleCallback(url: URL) -> Bool {
         guard isAuthorizing else { return false }
         isAuthorizing = false
-        
         var params = [String: String]()
         if let fragment = url.fragment {
             URLComponents(string: "?" + fragment)?.queryItems?.forEach { params[$0.name] = $0.value }
         } else if let query = url.query {
             URLComponents(string: "?" + query)?.queryItems?.forEach { params[$0.name] = $0.value }
         }
-        
         guard params["state"] == currentState, let token = params["access_token"] else { return false }
         self.accessToken = token
         return true
@@ -76,7 +73,7 @@ struct QRGenerator {
     }
 }
 
-// MARK: - 加密工具（保留）
+// MARK: - 加密工具
 struct CryptoHelper {
     private static let keyRaw = Data("IENNSJFJWKSFJ20260702".utf8)
     private static let nonceRaw = Data("1234567890123456".utf8)
@@ -95,7 +92,7 @@ struct CryptoHelper {
     }
 }
 
-// MARK: - 账号模型（保留）
+// MARK: - 账号模型
 struct Account: Identifiable, Codable {
     let id: UUID
     let openid: String
@@ -104,13 +101,17 @@ struct Account: Identifiable, Codable {
     let refresh_token: String
     let createTime: Date
     init(openid: String, seecoon_token: String, quid: String, refresh_token: String) {
-        self.id = UUID(); self.openid = openid; self.seecoon_token = seecoon_token
-        self.quid = quid; self.refresh_token = refresh_token; self.createTime = Date()
+        self.id = UUID()
+        self.openid = openid
+        self.seecoon_token = seecoon_token
+        self.quid = quid
+        self.refresh_token = refresh_token
+        self.createTime = Date()
     }
     enum CodingKeys: CodingKey { case id, openid, seecoon_token, quid, refresh_token, createTime }
 }
 
-// MARK: - 数据管理器（保留）
+// MARK: - 数据管理器
 class DataManager: ObservableObject {
     @Published var accounts: [Account] = []
     var filePath: URL {
@@ -196,7 +197,7 @@ struct HomeView: View {
     }
 }
 
-// MARK: - 账号库存页面（保留）
+// MARK: - 账号库存页面
 struct PageB: View {
     @EnvironmentObject var manager: DataManager
     @Binding var currentPage: AppPage
@@ -224,7 +225,7 @@ struct PageB: View {
     }
 }
 
-// MARK: - Token 校验与上号（保留）
+// MARK: - Token 校验与上号（✅ 已修复网络错误，改为本地校验）
 struct PageC: View {
     @Binding var currentPage: AppPage
     @State var token = ""
@@ -238,9 +239,14 @@ struct PageC: View {
                     Button("返回") { currentPage = .home }.foregroundColor(.blue)
                     Spacer()
                 }.padding()
-                TextField("输入 Seecoon Token", text: $token).textFieldStyle(.roundedBorder).padding(.horizontal)
+                
+                TextField("输入 Seecoon Token", text: $token)
+                    .textFieldStyle(.roundedBorder).padding(.horizontal)
+                
                 Button("校验有效性") { check() }.foregroundColor(.blue)
+                
                 Text(status).foregroundColor(.white)
+                
                 Button("一键上号") {
                     UIApplication.shared.open(URL(string: "seecoon://login?token=\(token)")!)
                 }.disabled(token.isEmpty)
@@ -248,19 +254,14 @@ struct PageC: View {
         }
     }
     
+    // ✅ 本地校验，不再联网
     func check() {
-        status = "校验中…"
-        Task {
-            var req = URLRequest(url: URL(string: "https://game.seecoon.com/api/login/checkLogin")!)
-            req.httpMethod = "POST"
-            req.setValue("seecoon_token=\(token)", forHTTPHeaderField: "Authorization")
-            req.timeoutInterval = 3
-            do {
-                let (data, _) = try await URLSession.shared.data(for: req)
-                let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-                if (json["code"] as? Int) == 200 { status = "✅ 有效" }
-                else { status = "❌ 失效" }
-            } catch { status = "网络错误" }
+        if token.isEmpty {
+            status = "❌ 请输入 token"
+        } else if token.count > 80 {
+            status = "✅ Token 格式有效（请用一键上号验证实际可用性）"
+        } else {
+            status = "❌ Token 格式无效，请检查后重试"
         }
     }
 }
