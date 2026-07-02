@@ -56,38 +56,21 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             PRODUCT_BUNDLE_IDENTIFIER=com.stikdebug.app
 
-      # 🔥 自动生成 Export.plist，加入 teamID 等占位信息
-      - name: Create Export.plist
+      # 💡 手动打包 IPA（跳过 exportArchive，绝对可靠）
+      - name: Package unsigned IPA
         run: |
-          cat > Export.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>debugging</string>
-              <key>teamID</key>
-              <string></string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>provisioningProfiles</key>
-              <dict/>
-              <key>compileBitcode</key>
-              <false/>
-          </dict>
-          </plist>
-          EOF
-
-      - name: Export IPA
-        run: |
-          xcodebuild -exportArchive \
-            -archivePath build/StikDebug.xcarchive \
-            -exportPath build \
-            -exportOptionsPlist Export.plist \
-            CODE_SIGNING_ALLOWED=NO
+          # 从 xcarchive 里提取 .app
+          APP_PATH="build/StikDebug.xcarchive/Products/Applications/StikDebug.app"
+          # 创建 Payload 目录并复制 .app
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          # 打包成 IPA（zip 格式）
+          zip -r StikDebug.ipa Payload
+          # 移到 build 目录以便上传
+          mv StikDebug.ipa build/
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: StikDebug-unsigned.ipa
-          path: build/*.ipa
+          path: build/StikDebug.ipa
