@@ -94,4 +94,10 @@ fastlane/test_output
 iOSInjectionProject/
 .DS_Store
 .vscode/settings.json
-.vscode 
+.vscode
+
+# Five-Elements 项目本地配置
+five-elements.xcodeproj/xcuserdata/
+five-elements.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
