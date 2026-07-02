@@ -1,30 +1,35 @@
-name: Build unsigned IPA
+name: Build Unsigned IPA
 
 on:
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-latest  # 或 macos-14 等
+    runs-on: macos-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Build & Archive
+      - name: Archive
         run: |
           xcodebuild archive \
-            -project YourProject.xcodeproj \
-            -scheme YourScheme \
-            -archivePath build/YourApp.xcarchive \
+            -project Stik.xcodeproj \
+            -scheme StikDebug \
+            -archivePath build/StikDebug.xcarchive \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" 
+            CODE_SIGN_IDENTITY=""
 
-      - name: Export unsigned IPA
+      - name: Export IPA
         run: |
           xcodebuild -exportArchive \
-            -archivePath build/YourApp.xcarchive \
+            -archivePath build/StikDebug.xcarchive \
             -exportPath build \
             -exportOptionsPlist Export.plist \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: StikDebug-unsigned.ipa
+          path: build/*.ipa
