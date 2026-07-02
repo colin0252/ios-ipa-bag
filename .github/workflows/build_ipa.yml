@@ -56,7 +56,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             PRODUCT_BUNDLE_IDENTIFIER=com.stikdebug.app
 
-      # 🔥 新增：自动生成 Export.plist
+      # 🔥 自动生成 Export.plist，加入 teamID 等占位信息
       - name: Create Export.plist
         run: |
           cat > Export.plist << 'EOF'
@@ -66,6 +66,14 @@ jobs:
           <dict>
               <key>method</key>
               <string>debugging</string>
+              <key>teamID</key>
+              <string></string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict/>
+              <key>compileBitcode</key>
+              <false/>
           </dict>
           </plist>
           EOF
