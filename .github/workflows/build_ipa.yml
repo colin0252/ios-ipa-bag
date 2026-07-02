@@ -11,32 +11,66 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v6
 
-      - name: 编译Release APP
+      - name: 写入包ID并提交文件，骗过Xcode16预读取
         run: |
-          mkdir -p output
-          xcodebuild build \
+          git config --global user.name ci
+          git config --global user.email ci@localhost
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.stikdebug.app" StikDebug/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.stikdebug.app" StikDebug/Info.plist
+          git add StikDebug/Info.plist
+          git commit -m "fix bundle id"
+
+      - name: 归档编译（加generic/platform=iOS才会完整链接二进制，全能签可识别）
+        run: |
+          mkdir build
+          xcodebuild archive \
           -project StikDebug.xcodeproj \
           -scheme StikDebug \
           -configuration Release \
-          -sdk iphoneos \
-          -derivedDataPath ./dd \
+          -destination generic/platform=iOS \
+          -archivePath build/StikDebug.xcarchive \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
           ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=YES \
           SWIFT_VERSION=5 \
           IPHONEOS_DEPLOYMENT_TARGET=16.0 \
-          COMPILE_BITCODE=NO
+          COMPILE_BITCODE=NO \
+          SKIP_VALIDATION=YES
 
-      - name: 固定路径打包IPA
+      - name: 生成导出配置文件（全能签专用，不会破坏二进制）
         run: |
-          mkdir -p Payload
-          cp -r dd/Build/Products/Release-iphoneos/StikDebug.app Payload/
-          zip -r output/StikDebug.ipa Payload
-          ls output/
+          cat > Export.plist <<XML
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>developer</string>
+              <key>signingStyle</key>
+              <string>none</string>
+              <key>compileBitcode</key>
+              <false/>
+              <key>thinning</key>
+              <string>none</string>
+              <key>stripSwiftSymbols</key>
+              <false/>
+              <key>provisioningProfiles</key>
+              <dict/>
+          </dict>
+          </plist>
+          XML
 
-      - name: 上传成品IPA
+      - name: 导出纯净无签名IPA（全能签百分百识别）
+        run: |
+          xcodebuild -exportArchive \
+          -archivePath build/StikDebug.xcarchive \
+          -exportPath build \
+          -exportOptionsPlist Export.plist \
+          CODE_SIGNING_ALLOWED=NO
+
+      - name: 上传IPA
         uses: actions/upload-artifact@v7
         with:
           name: StikDebug收号器
-          path: output/StikDebug.ipa
+          path: build/*.ipa
