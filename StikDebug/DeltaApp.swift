@@ -1,7 +1,6 @@
 import SwiftUI
 import CoreImage
 import CryptoKit
-import WebKit
 
 // MARK: - QQ 互联配置
 struct QQConfig {
@@ -34,6 +33,16 @@ let supportedGames: [GameConfig] = [
     GameConfig(name: "暗区突围", scheme: "darkzone://", icon: "target"),
     GameConfig(name: "和平精英", scheme: "pubgmhd://", icon: "scope")
 ]
+
+// MARK: - UIApplication 扩展（获取顶层窗口）
+extension UIApplication {
+    var keyWindow: UIWindow? {
+        connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
+    }
+}
 
 // MARK: - AppDelegate
 class AppDelegate: NSObject, UIApplicationDelegate {
@@ -170,32 +179,13 @@ class DataManager: ObservableObject {
 // MARK: - 页面路由
 enum AppPage { case home, capture, accountList, tokenLogin }
 
-// MARK: - 全局全屏修饰器
-struct FullScreenModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .frame(
-                minWidth: 0, maxWidth: .infinity,
-                minHeight: 0, maxHeight: .infinity,
-                alignment: .center
-            )
-            .ignoresSafeArea(.all)
-    }
-}
-
-extension View {
-    func fullScreen() -> some View {
-        self.modifier(FullScreenModifier())
-    }
-}
-
-// MARK: - 主界面
+// MARK: - 主界面（真正全屏）
 struct HomeView: View {
     @Binding var currentPage: AppPage
     
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea(.all)
+            Color.white
             
             VStack(spacing: 0) {
                 Spacer()
@@ -220,12 +210,14 @@ struct HomeView: View {
                 Spacer()
             }
         }
-        .fullScreen()
-        .onAppear { OrientationHelper.lockPortrait() }
+        .ignoresSafeArea()
+        .onAppear {
+            OrientationHelper.lockPortrait()
+            UIApplication.shared.keyWindow?.overrideUserInterfaceStyle = .light
+        }
     }
 }
 
-// MARK: - 首页按钮样式
 extension View {
     func homeButtonStyle(color: Color) -> some View {
         self
@@ -238,7 +230,7 @@ extension View {
     }
 }
 
-// MARK: - 挂机收号 + QQ扫码 合并页面（横屏全屏）
+// MARK: - 挂机收号 + QQ扫码（真正全屏横屏）
 struct CapturePage: View {
     @EnvironmentObject var manager: DataManager
     @Binding var currentPage: AppPage
@@ -248,7 +240,6 @@ struct CapturePage: View {
     @State private var session = ""
     @State private var clipTask: Task<Void, Never>?
     @State private var loopTask: Task<Void, Never>?
-    @State private var lastPaste = ""
     @StateObject private var authManager = QQAuthManager.shared
     
     func newSession() {
@@ -266,14 +257,17 @@ struct CapturePage: View {
         clipTask = Task {
             while true {
                 try? await Task.sleep(nanoseconds: 400_000_000)
-                let paste = UIPasteboard.general.string ?? ""
-                if paste != lastPaste && paste.contains("open://authdata/") {
-                    lastPaste = paste
-                    await MainActor.run {}
+                await MainActor.run {
+                    let paste = UIPasteboard.general.string ?? ""
+                    if paste != lastPaste && paste.contains("open://authdata/") {
+                        lastPaste = paste
+                    }
                 }
             }
         }
     }
+    
+    @State private var lastPaste = ""
     
     func startPolling() {
         loopTask = Task {
@@ -307,7 +301,7 @@ struct CapturePage: View {
     
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea(.all)
+            Color.white
             
             VStack(spacing: 0) {
                 HStack {
@@ -372,9 +366,10 @@ struct CapturePage: View {
                 Spacer()
             }
         }
-        .fullScreen()
+        .ignoresSafeArea()
         .onAppear {
             OrientationHelper.lockLandscape()
+            UIApplication.shared.keyWindow?.overrideUserInterfaceStyle = .light
             if selectedMode == 0 { newSession() }
         }
         .onChange(of: selectedMode) { mode in
@@ -394,14 +389,14 @@ struct CapturePage: View {
     }
 }
 
-// MARK: - 账号库存页面
+// MARK: - 账号库存页面（真正全屏）
 struct PageB: View {
     @EnvironmentObject var manager: DataManager
     @Binding var currentPage: AppPage
     
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea(.all)
+            Color.white
             
             VStack(spacing: 0) {
                 HStack {
@@ -438,21 +433,25 @@ struct PageB: View {
                 .listStyle(.plain)
             }
         }
-        .fullScreen()
-        .onAppear { OrientationHelper.lockPortrait() }
+        .ignoresSafeArea()
+        .onAppear {
+            OrientationHelper.lockPortrait()
+            UIApplication.shared.keyWindow?.overrideUserInterfaceStyle = .light
+        }
     }
 }
 
-// MARK: - Token 一键上号（含选择游戏）
+// MARK: - Token 一键上号（真正全屏 + 下拉游戏选择 + 粘贴板 + 系统键盘）
 struct TokenLoginPage: View {
     @Binding var currentPage: AppPage
     @State var token = ""
     @State var selectedGame = 0
     @State var status = ""
+    @State private var showGamePicker = false
     
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea(.all)
+            Color.white
             
             VStack(spacing: 0) {
                 HStack {
@@ -471,29 +470,70 @@ struct TokenLoginPage: View {
                     .foregroundColor(.black)
                     .padding(.bottom, 20)
                 
+                // 游戏下拉选择
                 VStack(alignment: .leading, spacing: 8) {
                     Text("选择游戏：")
                         .foregroundColor(.gray)
                         .font(.system(size: 14))
                     
-                    Picker("选择游戏", selection: $selectedGame) {
+                    Menu {
                         ForEach(0..<supportedGames.count, id: \.self) { i in
-                            HStack {
-                                Image(systemName: supportedGames[i].icon)
-                                Text(supportedGames[i].name)
+                            Button(action: { selectedGame = i }) {
+                                HStack {
+                                    Image(systemName: supportedGames[i].icon)
+                                    Text(supportedGames[i].name)
+                                    if selectedGame == i {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
                             }
-                            .tag(i)
                         }
+                    } label: {
+                        HStack {
+                            Image(systemName: supportedGames[selectedGame].icon)
+                            Text(supportedGames[selectedGame].name)
+                            Spacer()
+                            Image(systemName: "chevron.down")
+                                .foregroundColor(.gray)
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
                     }
-                    .pickerStyle(.segmented)
                 }
                 .padding(.horizontal, 25)
                 .padding(.bottom, 20)
                 
-                TextField("粘贴 Token", text: $token)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal, 25)
-                    .font(.system(size: 16))
+                // Token 输入 + 粘贴板按钮
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("输入 Token：")
+                        .foregroundColor(.gray)
+                        .font(.system(size: 14))
+                    
+                    HStack(spacing: 8) {
+                        TextField("粘贴 Token", text: $token)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 16))
+                            .keyboardType(.default)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        
+                        Button(action: {
+                            if let pasteString = UIPasteboard.general.string {
+                                token = pasteString
+                            }
+                        }) {
+                            Text("读取粘贴板")
+                                .font(.system(size: 13))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color.gray)
+                                .cornerRadius(8)
+                        }
+                    }
+                }
+                .padding(.horizontal, 25)
                 
                 Button("校验 Token") { check() }
                     .foregroundColor(.white)
@@ -526,8 +566,11 @@ struct TokenLoginPage: View {
                 Spacer()
             }
         }
-        .fullScreen()
-        .onAppear { OrientationHelper.lockPortrait() }
+        .ignoresSafeArea()
+        .onAppear {
+            OrientationHelper.lockPortrait()
+            UIApplication.shared.keyWindow?.overrideUserInterfaceStyle = .light
+        }
     }
     
     func check() {
