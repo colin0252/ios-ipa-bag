@@ -43,6 +43,15 @@ class GameLoginManager: ObservableObject {
         showMessage("Token已复制到剪贴板", type: .success)
     }
     
+    // ✅ 添加这个方法
+    func manualTokenInput(_ token: String) {
+        if token.isEmpty {
+            showMessage("请输入Token", type: .warning)
+            return
+        }
+        setToken(token)
+    }
+    
     func loginGame(gameName: String, gameCode: String) {
         guard !currentToken.isEmpty else {
             showMessage("请先获取Token", type: .warning)
