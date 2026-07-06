@@ -137,7 +137,7 @@ struct DeltaApp: App {
     }
 }
 
-// MARK: - 横屏扫码界面（腾讯QQ授权风格，适配刘海）
+// MARK: - 横屏扫码界面（无图标，纯文字）
 struct QRCodeLandscapeView: View {
     @Binding var isPresented: Bool
     @StateObject private var manager = GameLoginManager()
@@ -148,7 +148,7 @@ struct QRCodeLandscapeView: View {
                 Color.white.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    // 顶部栏：左侧关闭按钮，右侧留空（安全区域自适应）
+                    // 顶部关闭按钮
                     HStack {
                         Button {
                             isPresented = false
@@ -159,20 +159,15 @@ struct QRCodeLandscapeView: View {
                         }
                         Spacer()
                     }
-                    .padding(.top, geo.safeAreaInsets.top + 10)   // 适配灵动岛
+                    .padding(.top, geo.safeAreaInsets.top + 10)
                     .padding(.horizontal)
 
                     Spacer()
 
-                    // 企鹅图标 + 标题
-                    VStack(spacing: 10) {
-                        Image(systemName: "tortoise.fill")   // 占位企鹅，可替换为自定义图片
-                            .font(.system(size: 45))
-                            .foregroundColor(.black)
-                        Text("QQ授权登录")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(.black)
-                    }
+                    // 标题
+                    Text("QQ授权登录")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.black)
 
                     // 二维码
                     ZStack {
@@ -214,7 +209,7 @@ struct QRCodeLandscapeView: View {
                             .font(.system(size: 10))
                             .foregroundColor(.gray)
                     }
-                    .padding(.bottom, geo.safeAreaInsets.bottom + 10)   // 适配底部指示条
+                    .padding(.bottom, geo.safeAreaInsets.bottom + 10)
                 }
             }
         }
