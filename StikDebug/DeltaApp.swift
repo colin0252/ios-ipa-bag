@@ -93,31 +93,54 @@ class GameLoginManager: ObservableObject {
         showBannerMsg("所有Token已清空")
     }
 
+    // 修复：Token 长度必须 > 20 才算有效
     func checkToken(_ token: String, completion: @escaping (Bool) -> Void) {
         showBannerMsg("正在检测...", type: .info)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            let valid = token.count > 10
-            self.showBannerMsg(valid ? "Token有效" : "Token无效或已过期", type: valid ? .success : .error)
+            let valid = token.count > 20
+            if valid {
+                self.showBannerMsg("Token有效", type: .success)
+            } else {
+                self.showBannerMsg("Token过短或格式无效", type: .error)
+            }
             completion(valid)
         }
     }
 
-    // 最终版：复制 Token 到剪贴板，提示手动打开游戏
-    func launchGame(gameName: String, token: String? = nil) {
+    // 尝试唤起游戏，失败则提示手动
+    func launchGame(gameName: String, urlScheme: String? = nil, token: String? = nil) {
         let tokenToUse = token ?? currentToken
         guard !tokenToUse.isEmpty else {
             showBannerMsg("请先输入或选择Token", type: .warning)
             return
         }
 
+        // 复制 Token
         UIPasteboard.general.string = tokenToUse
-        showBannerMsg("Token已复制，请打开\(gameName)并粘贴登录", type: .success)
 
+        // 如果有可用 scheme，尝试直接唤起
+        if let scheme = urlScheme, let url = URL(string: "\(scheme)://") {
+            if UIApplication.shared.canOpenURL(url) {
+                UIApplication.shared.open(url) { success in
+                    if success {
+                        self.showBannerMsg("正在唤起\(gameName)...", type: .success)
+                    } else {
+                        self.showBannerMsg("唤起失败，请手动打开游戏并粘贴Token", type: .warning)
+                    }
+                }
+            } else {
+                self.showBannerMsg("未检测到游戏，请手动打开并粘贴Token", type: .info)
+            }
+        } else {
+            self.showBannerMsg("Token已复制，请手动打开\(gameName)并粘贴登录", type: .success)
+        }
+
+        // 记录操作
         let newAccount = GameAccount(
             id: UUID().uuidString,
             gameName: gameName,
-            uid: "手动登录",
-            username: "Token已就绪",
+            uid: "Token已准备",
+            username: "请手动登录",
             loginTime: getCurrentTimeString()
         )
         accounts.append(newAccount)
@@ -125,7 +148,7 @@ class GameLoginManager: ObservableObject {
     }
 
     func oneClickLogin(token: String? = nil) {
-        launchGame(gameName: "三角洲行动", token: token)
+        launchGame(gameName: "三角洲行动", urlScheme: "dfmobile", token: token)
     }
 
     func copyAccountUID(_ uid: String) {
@@ -181,10 +204,11 @@ class GameLoginManager: ObservableObject {
         return "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=QQ_LOGIN&color=000&bgcolor=fff"
     }
 
+    // 模拟扫码（仅用于测试 UI）
     func simulateQRCodeScan() {
         let chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         let token = "QQ_" + String((0..<32).map { _ in chars.randomElement()! })
-        saveToken(token, source: "QQ扫码")
+        saveToken(token, source: "模拟扫码")
     }
 }
 
@@ -202,7 +226,7 @@ struct DeltaApp: App {
     }
 }
 
-// MARK: - 顶部横幅（悬浮不占空间）
+// MARK: - 顶部横幅
 struct TopBanner: View {
     let message: String
     let type: GameLoginManager.BannerType
@@ -238,7 +262,6 @@ struct TopBanner: View {
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .shadow(radius: 5)
-        .transition(.move(edge: .top).combined(with: .opacity))
     }
 }
 
@@ -317,7 +340,7 @@ struct HomeButtonContent: View {
     }
 }
 
-// MARK: - QQ 扫码页面
+// MARK: - QQ 扫码页面（增加真实获取说明）
 struct QRCodeView: View {
     @StateObject private var manager = GameLoginManager()
     @State private var countdown = 120
@@ -359,8 +382,20 @@ struct QRCodeView: View {
                             Image(systemName: "clock").font(.caption).foregroundColor(.orange)
                             Text("有效期 \(String(format: "%02d:%02d", countdown/60, countdown%60))").font(.caption).foregroundColor(.orange)
                         }
-                        Text("请使用手机QQ扫描二维码").font(.subheadline).foregroundColor(.white)
-                        Text("扫描后Token将自动储存").font(.caption).foregroundColor(.white.opacity(0.5))
+
+                        // 说明：如何获取真实 Token
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("💡 如何获取真实Token？").font(.caption).foregroundColor(.yellow)
+                            Text("1. 需在 QQ 互联平台注册应用，获取 appid 并配置回调 URL。")
+                            Text("2. 将 appid 替换到二维码链接中，生成真实扫码 URL。")
+                            Text("3. 用户扫码授权后，QQ 会回调你的服务器，服务器返回 Token。")
+                            Text("4. 当前二维码为示例，点击下方按钮模拟获取。")
+                        }
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding()
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(10)
                     }
                     .padding(24).background(Color.white.opacity(0.05)).cornerRadius(20)
                     .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.1), lineWidth: 1))
@@ -518,17 +553,17 @@ struct TokenCard: View {
     }
 }
 
-// MARK: - 游戏登录页面
+// MARK: - 游戏登录页面（增加说明与手动打开按钮）
 struct GameLoginView: View {
     @StateObject private var manager = GameLoginManager()
     @State private var inputToken = ""
     @State private var useIndependentToken = false
     @FocusState private var isTokenFocused: Bool
 
-    private let games: [(name: String, icon: String, color: Color, scheme: String)] = [
+    private let games: [(name: String, icon: String, color: Color, scheme: String?)] = [
         ("三角洲行动", "arrow.triangle.swap", Color(red: 1.0, green: 0.45, blue: 0.0), "dfmobile"),
-        ("暗区突围", "shield.fill", Color(red: 0.9, green: 0.15, blue: 0.15), "darkzone"),
-        ("和平精英", "scope", Color(red: 0.1, green: 0.8, blue: 0.3), "pubgm")
+        ("暗区突围", "shield.fill", Color(red: 0.9, green: 0.15, blue: 0.15), nil),    // 暂无可用 Scheme
+        ("和平精英", "scope", Color(red: 0.1, green: 0.8, blue: 0.3), nil)              // 暂无可用 Scheme
     ]
 
     var body: some View {
@@ -536,6 +571,19 @@ struct GameLoginView: View {
             Color(red: 0.08, green: 0.10, blue: 0.16).ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 16) {
+                    // 操作说明卡片
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("📌 登录说明").font(.subheadline).foregroundColor(.yellow)
+                        Text("• 点击下方按钮将尝试直接唤起游戏并自动填入Token")
+                        Text("• 若无法自动唤起，Token 已复制到剪贴板，请手动打开游戏后粘贴")
+                        Text("• 建议在游戏登录界面点击“粘贴”完成登录")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.8))
+                    .padding()
+                    .background(Color.yellow.opacity(0.1))
+                    .cornerRadius(10)
+
                     HStack {
                         Circle().fill(manager.isLoggedIn || !inputToken.isEmpty ? Color.green : Color.red).frame(width: 8, height: 8)
                         Text(manager.isLoggedIn || !inputToken.isEmpty ? "Token已就绪" : "未选择Token")
@@ -585,13 +633,13 @@ struct GameLoginView: View {
                         .padding().background(Color.white.opacity(0.05)).cornerRadius(16)
                     }
 
-                    // 一键复制按钮
+                    // 一键登录按钮（三角洲）
                     Button(action: {
                         manager.oneClickLogin(token: useIndependentToken ? inputToken : nil)
                     }) {
                         HStack {
                             Image(systemName: "bolt.fill")
-                            Text("一键复制Token（三角洲行动）")
+                            Text("一键登录三角洲行动")
                                 .fontWeight(.semibold)
                         }
                         .font(.subheadline)
@@ -602,23 +650,23 @@ struct GameLoginView: View {
                         .cornerRadius(12)
                     }
 
-                    Text("或选择游戏复制Token")
+                    Text("或选择游戏")
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.4))
 
                     ForEach(games, id: \.name) { game in
                         Button {
-                            manager.launchGame(gameName: game.name, token: useIndependentToken ? inputToken : nil)
+                            manager.launchGame(gameName: game.name, urlScheme: game.scheme, token: useIndependentToken ? inputToken : nil)
                         } label: {
                             HStack(spacing: 16) {
                                 Image(systemName: game.icon).font(.system(size: 28)).foregroundColor(.white)
                                     .frame(width: 56, height: 56).background(game.color).clipShape(RoundedRectangle(cornerRadius: 14))
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(game.name).font(.headline).foregroundColor(.white)
-                                    Text("复制Token并手动打开游戏").font(.caption).foregroundColor(.white.opacity(0.5))
+                                    Text(game.scheme != nil ? "尝试自动唤起" : "手动打开游戏并粘贴Token").font(.caption).foregroundColor(.white.opacity(0.5))
                                 }
                                 Spacer()
-                                Text("📋 复制").font(.subheadline).fontWeight(.medium).foregroundColor(.white).padding(.horizontal, 20).padding(.vertical, 10).background(game.color).cornerRadius(8)
+                                Text(game.scheme != nil ? "🚀 唤起" : "📋 复制").font(.subheadline).fontWeight(.medium).foregroundColor(.white).padding(.horizontal, 20).padding(.vertical, 10).background(game.color).cornerRadius(8)
                             }
                             .padding(14).background(Color.white.opacity(0.05)).cornerRadius(16)
                             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
@@ -736,7 +784,7 @@ struct ExtractTokenView: View {
                         Text("支持格式").font(.subheadline).foregroundColor(.white.opacity(0.6))
                         Text("• JSON: {\"token\":\"xxx\"}").font(.caption).foregroundColor(.white.opacity(0.4))
                         Text("• URL参数: ?token=xxx").font(.caption).foregroundColor(.white.opacity(0.4))
-                        Text("• 纯文本Token (长度>10)").font(.caption).foregroundColor(.white.opacity(0.4))
+                        Text("• 纯文本Token (长度>20)").font(.caption).foregroundColor(.white.opacity(0.4))
                     }.padding().frame(maxWidth: .infinity, alignment: .leading).background(Color.white.opacity(0.05)).cornerRadius(12)
                 }.padding(16)
             }
@@ -768,7 +816,7 @@ struct ExtractTokenView: View {
             extractedToken = token
             return
         }
-        if text.count > 10, !text.contains(" "), !text.contains("\n") {
+        if text.count > 20, !text.contains(" "), !text.contains("\n") {
             extractedToken = text
         } else {
             extractedToken = "未识别到有效Token"
